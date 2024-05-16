@@ -12,6 +12,7 @@ class KombinatDefaults:
     exclude_knobs = [
         "Channel_Knob",
         "ChannelMask_Knob",
+        "Link_Knob",
         "Obsolete_Knob",
         "Text_Knob",
         "Tab_Knob",
@@ -32,8 +33,6 @@ class KombinatDefaults:
     def read_stored_defaults(self):
         defaults_file = self._get_defaults_file()
 
-        # TODO sort by keys
-
         if defaults_file.is_file():
             with open(defaults_file, "r") as default_file:
                 return json.load(default_file)
@@ -46,7 +45,8 @@ class KombinatDefaults:
         sorted_values = dict(sorted(values.items()))
         if defaults_file.is_file():
             with open(defaults_file, "w") as default_file:
-                json.dump(sorted_values, default_file, indent=4)
+                json_str = json.dumps(sorted_values, indent=4)
+                default_file.write(json_str)
         else:
             return {}
 
@@ -55,11 +55,11 @@ class KombinatDefaults:
             nuke.knobDefault(key, value)
 
     def save_knob_defaults(self):
-        # TODO build export from within nuke
 
         session_defined_defaults = self.collect_default_values_from_within_nuke()
-        self.stored_defaults.update(session_defined_defaults)
-        self.write_stored_defaults(self.stored_defaults)
+        if session_defined_defaults:
+            self.stored_defaults.update(session_defined_defaults)
+            self.write_stored_defaults(self.stored_defaults)
 
     def collect_default_values_from_within_nuke(self):
         defaults = {}
@@ -71,7 +71,6 @@ class KombinatDefaults:
             for knob in node.allKnobs():
                 knob_class = knob.Class()
                 knob_name = knob.name()
-
                 if (
                     not knob.visible()
                     or knob.Class() in self.exclude_knobs
@@ -80,20 +79,22 @@ class KombinatDefaults:
                     continue
 
                 if knob_class == "Enumeration_Knob":
-                    current_value = knob.values().index(knob.value())
+                    cleaned = [filter_.split("\t\t\t")[0] for filter_ in knob.values()]
+                    current_value = cleaned.index(knob.value())
                 else:
                     current_value = knob.value()
 
                 try:
                     default_value = knob.defaultValue()
+
+                    if current_value == default_value:
+                        continue
+
+                    defaults[f"{node_class}.{knob_name}"] = current_value
+
                 except AttributeError as error:
                     # TODO handle error
                     pass
-
-                if current_value == default_value:
-                    continue
-
-                defaults[f"{node_class}.{knob_name}"] = current_value
 
         return dict(sorted(defaults.items()))
 
